@@ -2,21 +2,19 @@
 
 from fastapi import APIRouter
 from app.services import vector_service
-from app.services.ai_service import get_client
+from app.services.ai_service import get_client, SMART_MODEL
 
 router = APIRouter()
 
 
 @router.post("/summarize")
 def summarize():
-    # ✅ Access the module directly so we always get the latest stored_chunks
     chunks = vector_service.stored_chunks
 
     if not chunks:
         return {"error": "No document uploaded yet"}
 
     client = get_client()
-
     context = "\n\n".join(chunks[:8])
 
     prompt = f"""You are a smart study assistant.
@@ -40,7 +38,7 @@ TEXT:
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SMART_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )

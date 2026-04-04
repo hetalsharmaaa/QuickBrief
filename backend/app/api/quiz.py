@@ -6,13 +6,13 @@ import json
 import re
 
 from app.services import vector_service
-from app.services.ai_service import get_client
+from app.services.ai_service import get_client, SMART_MODEL
 
 router = APIRouter()
 
 
 class QuizRequest(BaseModel):
-    num_questions: int = 5  # reduced default from 10 to 5
+    num_questions: int = 5
 
 
 @router.post("/quiz")
@@ -23,8 +23,6 @@ def generate_quiz(request: QuizRequest):
         return {"error": "No document uploaded"}
 
     client = get_client()
-
-    # Use only 5 chunks to keep prompt small and response fast
     context = "\n\n".join(chunks[:5])
 
     prompt = f"""Generate {request.num_questions} MCQ questions from the text below.
@@ -39,20 +37,16 @@ Text:
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SMART_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=2000
         )
 
         output = response.choices[0].message.content.strip()
-        print("RAW QUIZ OUTPUT:", output[:200])
-
-        # Strip markdown code blocks if present
         output = re.sub(r"```(?:json)?", "", output).strip()
         output = output.strip("`").strip()
 
-        # Find JSON array in the output
         match = re.search(r'\[.*\]', output, re.DOTALL)
         if match:
             output = match.group()

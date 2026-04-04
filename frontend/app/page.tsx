@@ -74,7 +74,7 @@ export default function ChatPage() {
     router.push("/login");
   };
 
-  // ✅ Text to speech
+  // ✅ Multilingual Text to speech
   const handleSpeak = (text: string, index: number) => {
     if (!window.speechSynthesis) return;
 
@@ -91,13 +91,30 @@ export default function ChatPage() {
     utterance.pitch = 1;
     utterance.volume = 1;
 
+    // ✅ Detect language from text using Unicode ranges
+    const detectLang = (t: string): string => {
+      if (/[\u0900-\u097F]/.test(t)) return "hi-IN";   // Hindi/Devanagari
+      if (/[\u0600-\u06FF]/.test(t)) return "ar-SA";   // Arabic
+      if (/[\u4E00-\u9FFF]/.test(t)) return "zh-CN";   // Chinese
+      if (/[\u3040-\u309F\u30A0-\u30FF]/.test(t)) return "ja-JP"; // Japanese
+      if (/[\uAC00-\uD7AF]/.test(t)) return "ko-KR";   // Korean
+      if (/[\u0400-\u04FF]/.test(t)) return "ru-RU";   // Russian/Cyrillic
+      if (/[\u0370-\u03FF]/.test(t)) return "el-GR";   // Greek
+      return "en-US"; // default
+    };
+
+    const detectedLang = detectLang(text);
+    utterance.lang = detectedLang;
+
+    // Pick best matching voice for detected language
     const voices = window.speechSynthesis.getVoices();
-    const preferred =
-      voices.find((v) => v.lang === "en-US" && v.name.toLowerCase().includes("female")) ||
-      voices.find((v) => v.lang === "en-US") ||
+    const matchingVoice =
+      voices.find((v) => v.lang === detectedLang) ||
+      voices.find((v) => v.lang.startsWith(detectedLang.split("-")[0])) ||
+      voices.find((v) => v.lang.startsWith("en")) ||
       voices[0];
 
-    if (preferred) utterance.voice = preferred;
+    if (matchingVoice) utterance.voice = matchingVoice;
 
     utterance.onstart = () => setSpeakingIndex(index);
     utterance.onend = () => setSpeakingIndex(null);

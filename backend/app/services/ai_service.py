@@ -26,6 +26,9 @@ IMPORTANT RULES:
 - NEVER over-explain simple things. NEVER write essays about greetings.
 """
 
+# ✅ Smarter model
+SMART_MODEL = "llama-3.3-70b-versatile"
+
 
 def generate_answer(context_chunks, question, mode="default"):
     client = get_client()
@@ -47,7 +50,7 @@ QUESTION:
 {question}"""
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model=SMART_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt}

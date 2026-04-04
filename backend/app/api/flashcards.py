@@ -6,7 +6,7 @@ import json
 import re
 
 from app.services import vector_service
-from app.services.ai_service import get_client
+from app.services.ai_service import get_client, SMART_MODEL
 
 router = APIRouter()
 
@@ -23,7 +23,6 @@ def generate_flashcards(request: FlashcardRequest):
         return {"error": "No document uploaded yet"}
 
     client = get_client()
-
     context = "\n\n".join(chunks[:6])
 
     prompt = f"""Generate {request.num_cards} flashcards from the text below.
@@ -37,26 +36,18 @@ Format:
 
 Categories to use: definition, concept, formula, date, person, process
 
-Rules:
-- Make fronts short and clear
-- Make backs concise but complete
-- Cover the most important content
-- Mix different types of cards
-
 Text:
 {context}"""
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SMART_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=2000
         )
 
         output = response.choices[0].message.content.strip()
-        print("RAW FLASHCARD OUTPUT:", output[:200])
-
         output = re.sub(r"```(?:json)?", "", output).strip()
         output = output.strip("`").strip()
 

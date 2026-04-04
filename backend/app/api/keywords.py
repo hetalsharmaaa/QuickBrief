@@ -5,7 +5,7 @@ import json
 import re
 
 from app.services import vector_service
-from app.services.ai_service import get_client
+from app.services.ai_service import get_client, SMART_MODEL
 
 router = APIRouter()
 
@@ -18,8 +18,6 @@ def get_keywords():
         return {"error": "No document uploaded yet"}
 
     client = get_client()
-
-    # Use first 5 chunks for keyword extraction
     context = "\n\n".join(chunks[:5])
 
     prompt = f"""Analyze the text below and extract important keywords and concepts.
@@ -45,19 +43,16 @@ Text:
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SMART_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=1000
         )
 
         output = response.choices[0].message.content.strip()
-
-        # Clean markdown if present
         output = re.sub(r"```(?:json)?", "", output).strip()
         output = output.strip("`").strip()
 
-        # Find JSON object
         match = re.search(r'\{.*\}', output, re.DOTALL)
         if match:
             output = match.group()

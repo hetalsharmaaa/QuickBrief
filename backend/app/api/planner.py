@@ -6,7 +6,7 @@ import json
 import re
 
 from app.services import vector_service
-from app.services.ai_service import get_client
+from app.services.ai_service import get_client, SMART_MODEL
 
 router = APIRouter()
 
@@ -26,7 +26,6 @@ def generate_plan(request: PlannerRequest):
 
     client = get_client()
 
-    # Sample from beginning, middle and end for full coverage
     total = len(chunks)
     sampled = chunks[:3] + chunks[total//2:total//2+3] + chunks[-3:]
     context = "\n\n".join(sampled)
@@ -57,27 +56,18 @@ Format:
   "overall_tips": ["tip1", "tip2", "tip3"]
 }}
 
-Rules:
-- Distribute topics evenly across days
-- Start with fundamentals, build up complexity
-- Include review days
-- Keep tasks realistic for {request.hours_per_day} hours
-- Make tips specific and actionable
-
 Document content:
 {context}"""
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=SMART_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
             max_tokens=3000
         )
 
         output = response.choices[0].message.content.strip()
-        print("RAW PLANNER OUTPUT:", output[:200])
-
         output = re.sub(r"```(?:json)?", "", output).strip()
         output = output.strip("`").strip()
 
