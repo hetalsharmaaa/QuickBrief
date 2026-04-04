@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.api import upload, chat, quiz, summarize, questions, keywords, auth, flashcards, planner
+from app.api import upload, chat, quiz, summarize, questions, keywords, auth, flashcards, planner, game
 
 
 @asynccontextmanager
@@ -41,6 +41,7 @@ app.include_router(keywords.router)
 app.include_router(auth.router)
 app.include_router(flashcards.router)
 app.include_router(planner.router)
+app.include_router(game.router)
 
 
 @app.get("/")

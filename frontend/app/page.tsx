@@ -378,6 +378,9 @@ export default function ChatPage() {
               Tools
             </p>
             <div className="space-y-1">
+              <a href="/game" className="block w-full text-left px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-700 transition">
+                🎈 Balloon Game
+              </a>
               <a href="/quiz" className="block w-full text-left px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-700 transition">
                 🧠 Quiz
               </a>
@@ -455,6 +458,9 @@ export default function ChatPage() {
               )}
             </div>
 
+            <a href="/game" className="bg-pink-600 hover:bg-pink-700 px-3 py-1 rounded-lg text-sm font-medium">
+              🎈 Game
+            </a>
             <a href="/planner" className="bg-green-700 hover:bg-green-600 px-3 py-1 rounded-lg text-sm font-medium">
               🗓️ Planner
             </a>
