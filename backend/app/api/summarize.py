@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from app.services import vector_service
 from app.services.ai_service import get_client, SMART_MODEL
+from app.services.cache_service import get as cache_get, set as cache_set
 
 router = APIRouter()
 
@@ -14,8 +15,14 @@ def summarize():
     if not chunks:
         return {"error": "No document uploaded yet"}
 
-    client = get_client()
     context = "\n\n".join(chunks[:8])
+
+    # ✅ Check cache first
+    cached = cache_get("summarize", {"context": context[:500]})
+    if cached:
+        return cached
+
+    client = get_client()
 
     prompt = f"""You are a smart study assistant.
 
@@ -43,7 +50,9 @@ TEXT:
             temperature=0.3
         )
         summary = response.choices[0].message.content
-        return {"summary": summary}
+        result = {"summary": summary}
+        cache_set("summarize", {"context": context[:500]}, result)
+        return result
 
     except Exception as e:
         print("SUMMARY ERROR:", e)

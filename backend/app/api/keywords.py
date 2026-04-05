@@ -6,6 +6,7 @@ import re
 
 from app.services import vector_service
 from app.services.ai_service import get_client, SMART_MODEL
+from app.services.cache_service import get as cache_get, set as cache_set
 
 router = APIRouter()
 
@@ -17,8 +18,14 @@ def get_keywords():
     if not chunks:
         return {"error": "No document uploaded yet"}
 
-    client = get_client()
     context = "\n\n".join(chunks[:5])
+
+    # ✅ Check cache
+    cached = cache_get("keywords", {"context": context[:500]})
+    if cached:
+        return cached
+
+    client = get_client()
 
     prompt = f"""Analyze the text below and extract important keywords and concepts.
 
@@ -58,6 +65,7 @@ Text:
             output = match.group()
 
         data = json.loads(output)
+        cache_set("keywords", {"context": context[:500]}, data)
         return data
 
     except Exception as e:

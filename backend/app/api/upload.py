@@ -7,6 +7,7 @@ import time
 from app.services.pdf_service import extract_text
 from app.services.chunk_service import chunk_text
 from app.services.vector_service import store_in_faiss
+from app.services.cache_service import clear as clear_cache
 
 router = APIRouter()
 
@@ -43,6 +44,10 @@ async def upload_file(file: UploadFile = File(...)):
         return {"error": "No text could be extracted from this file."}
 
     chunks = chunk_text(extracted_text)
+
+    # ✅ Clear old cache when new file uploaded
+    clear_cache()
+
     store_in_faiss(chunks)
 
     end_time = time.time()
@@ -57,8 +62,8 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.get("/status")
 def get_status():
-    from app.services.vector_service import stored_chunks, is_ready
+    from app.services import vector_service
     return {
-        "ready": is_ready,
-        "chunks": len(stored_chunks)
+        "ready": vector_service.is_ready,
+        "chunks": len(vector_service.stored_chunks)
     }

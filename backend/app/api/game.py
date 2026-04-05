@@ -6,6 +6,7 @@ import re
 
 from app.services import vector_service
 from app.services.ai_service import get_client, SMART_MODEL
+from app.services.cache_service import get as cache_get, set as cache_set
 
 router = APIRouter()
 
@@ -22,8 +23,12 @@ Make questions fun, varied and educational. Topics can include science, history,
 @router.post("/game/questions")
 def get_game_questions():
     client = get_client()
-
     chunks = vector_service.stored_chunks
+
+    cache_key = {"type": "pdf" if chunks else "general", "context": "".join(chunks[:3])[:300]}
+    cached = cache_get("game", cache_key)
+    if cached:
+        return cached
 
     if chunks:
         context = "\n\n".join(chunks[:6])
@@ -62,20 +67,20 @@ Text:
 
         questions = json.loads(output)
 
-        # Clean up — strip "A. " prefix from options if present
         for q in questions:
             q["options"] = [
                 re.sub(r'^[A-D]\.\s*', '', opt).strip()
                 for opt in q["options"]
             ]
-            # Normalize answer to index 0-3
             ans = q.get("answer", "A")
-            if isinstance(ans, str) and ans.upper() in ["A","B","C","D"]:
+            if isinstance(ans, str) and ans.upper() in ["A", "B", "C", "D"]:
                 q["answer_index"] = ord(ans.upper()) - ord("A")
             else:
                 q["answer_index"] = 0
 
-        return {"questions": questions}
+        result = {"questions": questions}
+        cache_set("game", cache_key, result)
+        return result
 
     except Exception as e:
         print("GAME ERROR:", e)

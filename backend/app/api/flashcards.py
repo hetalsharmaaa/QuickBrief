@@ -7,6 +7,7 @@ import re
 
 from app.services import vector_service
 from app.services.ai_service import get_client, SMART_MODEL
+from app.services.cache_service import get as cache_get, set as cache_set
 
 router = APIRouter()
 
@@ -22,8 +23,15 @@ def generate_flashcards(request: FlashcardRequest):
     if not chunks:
         return {"error": "No document uploaded yet"}
 
-    client = get_client()
     context = "\n\n".join(chunks[:6])
+
+    # ✅ Check cache
+    cache_key = {"context": context[:500], "num_cards": request.num_cards}
+    cached = cache_get("flashcards", cache_key)
+    if cached:
+        return cached
+
+    client = get_client()
 
     prompt = f"""Generate {request.num_cards} flashcards from the text below.
 
@@ -56,7 +64,9 @@ Text:
             output = match.group()
 
         cards = json.loads(output)
-        return {"flashcards": cards}
+        result = {"flashcards": cards}
+        cache_set("flashcards", cache_key, result)
+        return result
 
     except Exception as e:
         print("FLASHCARD ERROR:", e)

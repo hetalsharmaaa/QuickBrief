@@ -48,6 +48,7 @@ app.include_router(game.router)
 def home():
     return {"message": "StudyBuddy backend running"}
 
+
 @app.get("/status")
 def get_status():
     from app.services import vector_service
@@ -55,3 +56,28 @@ def get_status():
         "ready": vector_service.is_ready,
         "chunks": len(vector_service.stored_chunks)
     }
+
+
+@app.get("/cache/stats")
+def cache_stats():
+    from app.services.cache_service import stats
+    return stats()
+
+
+@app.post("/cache/clear")
+def cache_clear():
+    from app.services.cache_service import clear
+    clear()
+    return {"message": "Cache cleared"}
+
+
+@app.post("/upload/reset")
+def reset_upload():
+    """Clear everything when a new file is uploaded"""
+    from app.services import vector_service
+    from app.services.cache_service import clear
+    vector_service.stored_chunks = []
+    vector_service.is_ready = False
+    vector_service.index = None
+    clear()
+    return {"message": "Reset complete"}
