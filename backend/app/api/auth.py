@@ -9,7 +9,7 @@ import os
 
 router = APIRouter()
 
-SECRET_KEY = os.getenv("JWT_SECRET", "studybuddy-secret-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET", "QuickBrief-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

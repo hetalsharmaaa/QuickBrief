@@ -46,7 +46,7 @@ app.include_router(game.router)
 
 @app.get("/")
 def home():
-    return {"message": "StudyBuddy backend running"}
+    return {"message": "QuickBrief backend running"}
 
 
 @app.get("/status")
