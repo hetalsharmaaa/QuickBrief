@@ -155,7 +155,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">
-          StudyBuddy · AI-powered learning
+          QuickBrief · AI-powered learning
         </p>
       </div>
     </div>
