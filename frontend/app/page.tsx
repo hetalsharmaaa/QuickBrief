@@ -191,7 +191,7 @@ export default function ChatPage() {
   }, [messages]);
 
   const saveAsNote = (content: string, index: number) => {
-    const existing = localStorage.getItem("QuickBrief_notes");
+    const existing = localStorage.getItem("studybuddy_notes");
     const notes: Note[] = existing ? JSON.parse(existing) : [];
     const note: Note = {
       id: Date.now().toString(),
@@ -201,7 +201,7 @@ export default function ChatPage() {
       tag: "important",
     };
     localStorage.setItem(
-      "QuickBrief_notes",
+      "studybuddy_notes",
       JSON.stringify([note, ...notes])
     );
     setSavedMsgIds((prev) => new Set(prev).add(index));
@@ -429,7 +429,7 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col">
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-700">
-          <span className="font-semibold text-lg">📚 QuickBrief</span>
+          <span className="font-semibold text-lg">📚 StudyBuddy</span>
           <div className="flex gap-2 items-center flex-wrap">
             <div className="relative md:hidden">
               <button
@@ -690,7 +690,7 @@ export default function ChatPage() {
             </div>
 
             <p className="text-xs text-gray-400 mt-2 text-center">
-              QuickBrief can make mistakes. Always verify important info.
+              I can make mistakes. Always verify important info.
             </p>
           </div>
         </div>
