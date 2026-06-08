@@ -8,6 +8,7 @@ from app.services.pdf_service import extract_text
 from app.services.chunk_service import chunk_text
 from app.services.vector_service import store_in_faiss
 from app.services.cache_service import clear as clear_cache
+from app.services.db_service import get_db
 
 router = APIRouter()
 
@@ -45,10 +46,19 @@ async def upload_file(file: UploadFile = File(...)):
 
     chunks = chunk_text(extracted_text)
 
-    # ✅ Clear old cache when new file uploaded
     clear_cache()
-
     store_in_faiss(chunks)
+
+    # ✅ Save to Supabase — indented inside the function
+    try:
+        db = get_db()
+        db.table("documents").insert({
+            "filename": filename,
+            "file_type": ext,
+            "chunk_count": len(chunks)
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ Could not save document to DB: {e}")
 
     end_time = time.time()
 
