@@ -7,14 +7,13 @@ from datetime import datetime, timedelta
 import hashlib
 import os
 
+from app.services.db_service import get_db
+
 router = APIRouter()
 
 SECRET_KEY = os.getenv("JWT_SECRET", "QuickBrief-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
-
-# In-memory user store (Phase 4 will replace with real DB)
-fake_users_db: dict = {}
 
 
 class RegisterRequest(BaseModel):
@@ -45,23 +44,38 @@ def create_token(data: dict):
 
 @router.post("/auth/register")
 def register(req: RegisterRequest):
-    if req.email in fake_users_db:
+    db = get_db()
+
+    # Check if email already exists
+    existing = db.table("users").select("email").eq("email", req.email).execute()
+    if existing.data:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed = hash_password(req.password)
-    fake_users_db[req.email] = {"name": req.name, "email": req.email, "password": hashed}
+    result = db.table("users").insert({
+        "name": req.name,
+        "email": req.email,
+        "password_hash": hashed
+    }).execute()
 
-    token = create_token({"sub": req.email, "name": req.name})
+    user = result.data[0]
+    token = create_token({"sub": req.email, "name": req.name, "user_id": str(user["id"])})
     return {"token": token, "name": req.name, "email": req.email}
 
 
 @router.post("/auth/login")
 def login(req: LoginRequest):
-    user = fake_users_db.get(req.email)
-    if not user or not verify_password(req.password, user["password"]):
+    db = get_db()
+
+    result = db.table("users").select("*").eq("email", req.email).execute()
+    if not result.data:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_token({"sub": req.email, "name": user["name"]})
+    user = result.data[0]
+    if not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_token({"sub": req.email, "name": user["name"], "user_id": str(user["id"])})
     return {"token": token, "name": user["name"], "email": req.email}
 
 
@@ -69,17 +83,10 @@ def login(req: LoginRequest):
 def get_me(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        name = payload.get("name")
-        return {"email": email, "name": name}
+        return {
+            "email": payload.get("sub"),
+            "name": payload.get("name"),
+            "user_id": payload.get("user_id")
+        }
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
-##```
-
-##This drops `passlib` entirely and uses Python's built-in `hashlib` (SHA-256) — no compatibility issues, no extra packages needed. It's perfectly fine for this stage; Phase 4 can upgrade to proper bcrypt when you add a real database.
-
-### Fix 2 — also remove `passlib` from `requirements.txt`
-
-##Delete this line:
-##```
-##passlib[bcrypt]==1.7.4
