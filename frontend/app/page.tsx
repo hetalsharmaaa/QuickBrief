@@ -284,27 +284,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Tools */}
-          <div className="pt-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">Tools</p>
-            <div className="space-y-0.5">
-              {[
-                { href: "/game", icon: "🎈", label: "Balloon Game" },
-                { href: "/quiz", icon: "🧠", label: "Quiz" },
-                { href: "/questions", icon: "❓", label: "Questions" },
-                { href: "/keywords", icon: "🔑", label: "Keywords" },
-                { href: "/flashcards", icon: "🃏", label: "Flashcards" },
-                { href: "/planner", icon: "🗓️", label: "Study Planner" },
-                { href: "/notes", icon: "📝", label: "My Notes" },
-              ].map((tool) => (
-                <a key={tool.href} href={tool.href}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-white/5 transition-all">
-                  <span>{tool.icon}</span>
-                  <span>{tool.label}</span>
-                </a>
-              ))}
-            </div>
-          </div>
+          
         </div>
 
         {/* User */}
