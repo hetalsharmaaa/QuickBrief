@@ -11,16 +11,10 @@ const MODES = [
   { id: "revision", label: "⚡ Revision", desc: "Quick bullet points", color: "#10B981" },
 ];
 
-type Note = {
-  id: string;
-  content: string;
-  source: "manual" | "ai";
-  timestamp: string;
-  tag: string;
-};
-
 export default function ChatPage() {
   const router = useRouter();
+
+  // ── existing state ──
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -34,11 +28,20 @@ export default function ChatPage() {
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
+
+  // ── new: chat history state ──
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [currentDocName, setCurrentDocName] = useState<string | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const saveTimerRef = useRef<any>(null);
 
+  // ── on mount ──
   useEffect(() => {
     const token = localStorage.getItem("sb_token");
     const name = localStorage.getItem("sb_name");
@@ -46,8 +49,10 @@ export default function ChatPage() {
       router.push("/login");
     } else {
       setUserName(name || "User");
+      fetchSessions();
     }
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) setMicSupported(true);
   }, []);
 
@@ -57,6 +62,111 @@ export default function ChatPage() {
       recognitionRef.current?.stop();
     };
   }, []);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // ─────────────────────────────────────────
+  // CHAT HISTORY FUNCTIONS
+  // ─────────────────────────────────────────
+
+  const fetchSessions = async () => {
+    const token = localStorage.getItem("sb_token");
+    if (!token) return;
+    setSessionsLoading(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/sessions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setSessions(data.sessions || []);
+    } catch (e) {
+      console.error("Could not load sessions", e);
+    }
+    setSessionsLoading(false);
+  };
+
+  const loadSession = async (sessionId: string) => {
+    const token = localStorage.getItem("sb_token");
+    if (!token) return;
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setMessages(data.messages || []);
+      setActiveSessionId(sessionId);
+      setCurrentDocName(data.document_name || null);
+    } catch (e) {
+      console.error("Could not load session", e);
+    }
+  };
+
+  // auto-saves 1.5s after last message — debounced
+  const autoSave = (msgs: any[], docName: string | null, sessionId: string | null) => {
+    if (msgs.length === 0) return;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      const token = localStorage.getItem("sb_token");
+      if (!token) return;
+      const firstUserMsg = msgs.find((m) => m.role === "user");
+      const title = firstUserMsg
+        ? firstUserMsg.content.slice(0, 45) + (firstUserMsg.content.length > 45 ? "..." : "")
+        : "New Chat";
+      try {
+        const res = await fetch("http://127.0.0.1:8000/sessions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            title,
+            messages: msgs,
+            document_name: docName,
+          }),
+        });
+        const data = await res.json();
+        if (!sessionId && data.session_id) {
+          setActiveSessionId(data.session_id);
+          fetchSessions();
+        } else {
+          // refresh list to update "updated_at" ordering
+          fetchSessions();
+        }
+      } catch (e) {
+        console.error("Auto-save failed", e);
+      }
+    }, 1500);
+  };
+
+  const startNewChat = () => {
+    setMessages([]);
+    setActiveSessionId(null);
+    setCurrentDocName(null);
+    setSavedMsgIds(new Set());
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    const token = localStorage.getItem("sb_token");
+    if (!token) return;
+    try {
+      await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (activeSessionId === sessionId) startNewChat();
+      fetchSessions();
+    } catch (e) {
+      console.error("Could not delete session", e);
+    }
+  };
+
+  // ─────────────────────────────────────────
+  // EXISTING FUNCTIONS (unchanged)
+  // ─────────────────────────────────────────
 
   const handleLogout = () => {
     window.speechSynthesis?.cancel();
@@ -103,7 +213,8 @@ export default function ChatPage() {
   };
 
   const handleMic = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
     if (listening) {
       recognitionRef.current?.stop();
@@ -118,7 +229,9 @@ export default function ChatPage() {
     recognition.maxAlternatives = 1;
     recognition.onstart = () => setListening(true);
     recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results).map((result: any) => result[0].transcript).join("");
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0].transcript)
+        .join("");
       setInput(transcript);
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -138,10 +251,6 @@ export default function ChatPage() {
     }
   };
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const saveAsNote = async (content: string, index: number) => {
     try {
       await fetch("http://127.0.0.1:8000/notes", {
@@ -160,7 +269,10 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if (!input && !file) return;
-    if (listening) { recognitionRef.current?.stop(); setListening(false); }
+    if (listening) {
+      recognitionRef.current?.stop();
+      setListening(false);
+    }
 
     let newMessages = [...messages];
     if (file) newMessages.push({ role: "user", type: "file", content: file.name });
@@ -168,6 +280,8 @@ export default function ChatPage() {
 
     setMessages(newMessages);
     setLoading(true);
+
+    let docName = currentDocName;
 
     if (file) {
       const formData = new FormData();
@@ -179,8 +293,16 @@ export default function ChatPage() {
       });
       const uploadData = await uploadRes.json();
       if (uploadData.error) {
-        setMessages((prev) => [...prev, { role: "assistant", type: "text", content: `❌ ${uploadData.error}` }]);
+        setMessages((prev) => {
+          const updated = [...prev, { role: "assistant", type: "text", content: `❌ ${uploadData.error}` }];
+          autoSave(updated, docName, activeSessionId);
+          return updated;
+        });
       } else {
+        // track the uploaded doc name for this session
+        docName = file.name;
+        setCurrentDocName(file.name);
+
         let ready = false;
         for (let i = 0; i < 10; i++) {
           const statusRes = await fetch("http://127.0.0.1:8000/status");
@@ -188,12 +310,20 @@ export default function ChatPage() {
           if (statusData.ready) { ready = true; break; }
           await new Promise((r) => setTimeout(r, 500));
         }
-        setMessages((prev) => [...prev, {
-          role: "assistant", type: "text",
-          content: ready
-            ? `✅ "${file.name}" uploaded and ready! (${uploadData.chunks_created} chunks in ${uploadData.processing_time_seconds}s)\n\nAsk me anything or click ⚡ Summarize PDF.`
-            : `⚠️ File uploaded but still processing. Wait a moment then ask your question.`,
-        }]);
+        setMessages((prev) => {
+          const updated = [
+            ...prev,
+            {
+              role: "assistant",
+              type: "text",
+              content: ready
+                ? `✅ "${file.name}" uploaded and ready! (${uploadData.chunks_created} chunks in ${uploadData.processing_time_seconds}s)\n\nAsk me anything or click ⚡ Summarize PDF.`
+                : `⚠️ File uploaded but still processing. Wait a moment then ask your question.`,
+            },
+          ];
+          autoSave(updated, docName, activeSessionId);
+          return updated;
+        });
       }
     }
 
@@ -204,13 +334,21 @@ export default function ChatPage() {
         body: JSON.stringify({ question: input, mode }),
       });
       const data = await res.json();
-      const activeMode = MODES.find((m) => m.id === mode);
-      setMessages((prev) => [...prev, {
-        role: "assistant", type: "text",
-        content: data.answer || data.error,
-        mode: activeMode?.label,
-        modeColor: activeMode?.color,
-      }]);
+      const activeModeObj = MODES.find((m) => m.id === mode);
+      setMessages((prev) => {
+        const updated = [
+          ...prev,
+          {
+            role: "assistant",
+            type: "text",
+            content: data.answer || data.error,
+            mode: activeModeObj?.label,
+            modeColor: activeModeObj?.color,
+          },
+        ];
+        autoSave(updated, docName, activeSessionId);
+        return updated;
+      });
     }
 
     setLoading(false);
@@ -220,84 +358,186 @@ export default function ChatPage() {
 
   const handleSummarize = async () => {
     setSummarizing(true);
-    setMessages((prev) => [...prev, { role: "user", type: "text", content: "Give me a summary of the document." }]);
+    const userMsg = { role: "user", type: "text", content: "Give me a summary of the document." };
+    setMessages((prev) => [...prev, userMsg]);
     const res = await fetch("http://127.0.0.1:8000/summarize", { method: "POST" });
     const data = await res.json();
-    setMessages((prev) => [...prev, { role: "assistant", type: "text", content: data.summary || data.error }]);
+    setMessages((prev) => {
+      const updated = [...prev, { role: "assistant", type: "text", content: data.summary || data.error }];
+      autoSave(updated, currentDocName, activeSessionId);
+      return updated;
+    });
     setSummarizing(false);
   };
 
   const handleKeyDown = (e: any) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   const activeMode = MODES.find((m) => m.id === mode);
 
-  return (
-    <div className="flex h-screen text-white overflow-hidden" style={{ background: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)" }}>
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
 
+  return (
+    <div
+      className="flex h-screen text-white overflow-hidden"
+      style={{ background: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)" }}
+    >
       {/* ── SIDEBAR ── */}
-      <div className="w-64 flex-shrink-0 hidden md:flex flex-col justify-between p-4 border-r border-white/10"
-        style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(20px)" }}>
-        <div className="space-y-3">
+      <div
+        className="w-64 flex-shrink-0 hidden md:flex flex-col justify-between border-r border-white/10"
+        style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(20px)" }}
+      >
+        {/* scrollable top section */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
           {/* Logo */}
           <div className="flex items-center gap-2 px-2 py-3 mb-2">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg"
-              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-lg"
+              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+            >
               📚
             </div>
-            <span className="font-bold text-lg bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}>
+            <span
+              className="font-bold text-lg bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}
+            >
               QuickBrief
             </span>
           </div>
 
-          {/* Action buttons */}
-          <button onClick={() => setMessages([])}
-            className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-300 border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all">
+          {/* New Chat */}
+          <button
+            onClick={startNewChat}
+            className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-300 border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all"
+          >
             + New Chat
           </button>
 
-          <button onClick={handleSummarize} disabled={summarizing}
+          {/* Summarize */}
+          <button
+            onClick={handleSummarize}
+            disabled={summarizing}
             className="w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #F59E0B, #EF4444)", boxShadow: summarizing ? "none" : "0 0 20px rgba(245,158,11,0.3)" }}>
+            style={{
+              background: "linear-gradient(135deg, #F59E0B, #EF4444)",
+              boxShadow: summarizing ? "none" : "0 0 20px rgba(245,158,11,0.3)",
+            }}
+          >
             {summarizing ? "⏳ Summarizing..." : "⚡ Summarize PDF"}
           </button>
 
           {/* AI Mode */}
           <div className="pt-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">AI Mode</p>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">
+              AI Mode
+            </p>
             <div className="space-y-1">
               {MODES.map((m) => (
-                <button key={m.id} onClick={() => setMode(m.id)}
+                <button
+                  key={m.id}
+                  onClick={() => setMode(m.id)}
                   className="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all"
-                  style={mode === m.id ? {
-                    background: `linear-gradient(135deg, ${m.color}33, ${m.color}11)`,
-                    borderLeft: `3px solid ${m.color}`,
-                    color: "#fff",
-                  } : { color: "#9ca3af" }}>
+                  style={
+                    mode === m.id
+                      ? {
+                          background: `linear-gradient(135deg, ${m.color}33, ${m.color}11)`,
+                          borderLeft: `3px solid ${m.color}`,
+                          color: "#fff",
+                        }
+                      : { color: "#9ca3af" }
+                  }
+                >
                   <span className="font-medium">{m.label}</span>
-                  <span className="block text-xs mt-0.5" style={{ color: mode === m.id ? m.color : "#6b7280" }}>{m.desc}</span>
+                  <span
+                    className="block text-xs mt-0.5"
+                    style={{ color: mode === m.id ? m.color : "#6b7280" }}
+                  >
+                    {m.desc}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
 
-          
+          {/* ── CHAT HISTORY ── */}
+          <div className="pt-2">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">
+              Chat History
+            </p>
+
+            {sessionsLoading ? (
+              <p className="text-xs text-gray-600 px-2 py-1">Loading...</p>
+            ) : sessions.length === 0 ? (
+              <p className="text-xs text-gray-600 px-2 py-1">No saved chats yet</p>
+            ) : (
+              <div className="space-y-1">
+                {sessions.map((s: any) => (
+                  <div
+                    key={s.id}
+                    className="group flex items-start justify-between px-3 py-2 rounded-xl cursor-pointer transition-all"
+                    style={
+                      activeSessionId === s.id
+                        ? {
+                            background: "rgba(139,92,246,0.2)",
+                            borderLeft: "3px solid #8B5CF6",
+                          }
+                        : { borderLeft: "3px solid transparent" }
+                    }
+                    onClick={() => loadSession(s.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate text-gray-300">{s.title}</p>
+                      {s.document_name && (
+                        <p className="text-xs truncate mt-0.5" style={{ color: "#6b7280" }}>
+                          📄 {s.document_name}
+                        </p>
+                      )}
+                      <p className="text-xs mt-0.5" style={{ color: "#4b5563" }}>
+                        {new Date(s.updated_at).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSession(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 text-xs ml-1 mt-0.5 transition-all flex-shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* User */}
-        <div className="border-t border-white/10 pt-3">
+        {/* User — pinned to bottom */}
+        <div className="border-t border-white/10 p-4">
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+              >
                 {userName.charAt(0).toUpperCase()}
               </div>
               <span className="text-sm text-gray-300 truncate max-w-[100px]">{userName}</span>
             </div>
-            <button onClick={handleLogout} className="text-xs text-gray-600 hover:text-red-400 transition px-2 py-1 rounded-lg hover:bg-red-400/10">
+            <button
+              onClick={handleLogout}
+              className="text-xs text-gray-600 hover:text-red-400 transition px-2 py-1 rounded-lg hover:bg-red-400/10"
+            >
               Logout
             </button>
           </div>
@@ -308,12 +548,15 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-white/10 flex-shrink-0"
-          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}>
-
+        <div
+          className="flex items-center justify-between px-6 py-3 border-b border-white/10 flex-shrink-0"
+          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}
+        >
           <div className="flex items-center gap-2 md:hidden">
-            <span className="font-bold bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}>
+            <span
+              className="font-bold bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}
+            >
               📚 QuickBrief
             </span>
           </div>
@@ -323,18 +566,25 @@ export default function ChatPage() {
           <div className="flex gap-2 items-center flex-wrap justify-end">
             {/* Mobile mode toggle */}
             <div className="relative md:hidden">
-              <button onClick={() => setShowModes(!showModes)}
+              <button
+                onClick={() => setShowModes(!showModes)}
                 className="px-3 py-1.5 rounded-xl text-xs font-medium border border-white/20 hover:border-white/40 transition"
-                style={{ background: `${activeMode?.color}22`, color: activeMode?.color }}>
+                style={{ background: `${activeMode?.color}22`, color: activeMode?.color }}
+              >
                 {activeMode?.label}
               </button>
               {showModes && (
-                <div className="absolute right-0 top-10 rounded-2xl p-2 z-50 w-48 shadow-2xl border border-white/10"
-                  style={{ background: "rgba(15,12,41,0.95)", backdropFilter: "blur(20px)" }}>
+                <div
+                  className="absolute right-0 top-10 rounded-2xl p-2 z-50 w-48 shadow-2xl border border-white/10"
+                  style={{ background: "rgba(15,12,41,0.95)", backdropFilter: "blur(20px)" }}
+                >
                   {MODES.map((m) => (
-                    <button key={m.id} onClick={() => { setMode(m.id); setShowModes(false); }}
+                    <button
+                      key={m.id}
+                      onClick={() => { setMode(m.id); setShowModes(false); }}
                       className="w-full text-left px-3 py-2 rounded-xl text-sm transition"
-                      style={mode === m.id ? { background: `${m.color}22`, color: m.color } : { color: "#9ca3af" }}>
+                      style={mode === m.id ? { background: `${m.color}22`, color: m.color } : { color: "#9ca3af" }}
+                    >
                       {m.label}
                     </button>
                   ))}
@@ -351,25 +601,35 @@ export default function ChatPage() {
               { href: "/questions", label: "❓ Questions", bg: "linear-gradient(135deg, #3B82F6, #06B6D4)" },
               { href: "/quiz", label: "🧠 Quiz", bg: "linear-gradient(135deg, #8B5CF6, #EC4899)" },
             ].map((btn) => (
-              <a key={btn.href} href={btn.href}
+              <a
+                key={btn.href}
+                href={btn.href}
                 className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all hover:scale-105 hover:shadow-lg"
-                style={{ background: btn.bg }}>
+                style={{ background: btn.bg }}
+              >
                 {btn.label}
               </a>
             ))}
 
             {/* Mobile user */}
             <div className="relative md:hidden">
-              <button onClick={() => setShowUserMenu(!showUserMenu)}
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
+                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+              >
                 {userName.charAt(0).toUpperCase()}
               </button>
               {showUserMenu && (
-                <div className="absolute right-0 top-10 rounded-xl p-3 z-50 w-40 shadow-xl border border-white/10"
-                  style={{ background: "rgba(15,12,41,0.95)" }}>
+                <div
+                  className="absolute right-0 top-10 rounded-xl p-3 z-50 w-40 shadow-xl border border-white/10"
+                  style={{ background: "rgba(15,12,41,0.95)" }}
+                >
                   <p className="text-xs text-gray-400 mb-2 truncate">{userName}</p>
-                  <button onClick={handleLogout} className="w-full text-left text-sm text-red-400 hover:text-red-300">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left text-sm text-red-400 hover:text-red-300"
+                  >
                     🚪 Logout
                   </button>
                 </div>
@@ -380,16 +640,28 @@ export default function ChatPage() {
 
         {/* Mode banner */}
         {mode !== "default" && (
-          <div className="text-xs text-center py-1.5 flex-shrink-0 font-medium"
-            style={{ background: `${activeMode?.color}22`, color: activeMode?.color, borderBottom: `1px solid ${activeMode?.color}33` }}>
+          <div
+            className="text-xs text-center py-1.5 flex-shrink-0 font-medium"
+            style={{
+              background: `${activeMode?.color}22`,
+              color: activeMode?.color,
+              borderBottom: `1px solid ${activeMode?.color}33`,
+            }}
+          >
             {activeMode?.label} mode active — {activeMode?.desc}
           </div>
         )}
 
         {/* Listening banner */}
         {listening && (
-          <div className="text-xs text-center py-2 flex-shrink-0 flex items-center justify-center gap-2"
-            style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5", borderBottom: "1px solid rgba(239,68,68,0.3)" }}>
+          <div
+            className="text-xs text-center py-2 flex-shrink-0 flex items-center justify-center gap-2"
+            style={{
+              background: "rgba(239,68,68,0.15)",
+              color: "#fca5a5",
+              borderBottom: "1px solid rgba(239,68,68,0.3)",
+            }}
+          >
             <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse inline-block" />
             Listening... speak your question, then click mic to stop
           </div>
@@ -402,24 +674,30 @@ export default function ChatPage() {
             {/* Welcome screen */}
             {messages.length === 0 && (
               <div className="text-center mt-16 space-y-4">
-                <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl mx-auto"
-                  style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 0 60px rgba(139,92,246,0.4)" }}>
+                <div
+                  className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl mx-auto"
+                  style={{
+                    background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
+                    boxShadow: "0 0 60px rgba(139,92,246,0.4)",
+                  }}
+                >
                   📚
                 </div>
-                <h1 className="text-3xl font-bold bg-clip-text text-transparent"
-                  style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa, #34d399)" }}>
+                <h1
+                  className="text-3xl font-bold bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa, #34d399)" }}
+                >
                   Hi {userName}! I'm QuickBrief
                 </h1>
                 <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed">
-                  Upload a file using the <span className="text-white font-semibold">+</span> button, then ask me anything about it.
+                  Upload a file using the{" "}
+                  <span className="text-white font-semibold">+</span> button, then ask me anything about it.
                 </p>
                 <div className="flex items-center justify-center gap-6 text-xs text-gray-500 mt-4">
                   <span>🎤 Speak questions</span>
                   <span>🔊 Listen to answers</span>
                   <span>📌 Save notes</span>
                 </div>
-
-                {/* Feature cards */}
                 <div className="grid grid-cols-2 gap-3 mt-8 max-w-md mx-auto">
                   {[
                     { icon: "🧠", label: "Quiz Mode", desc: "Test your knowledge" },
@@ -427,8 +705,11 @@ export default function ChatPage() {
                     { icon: "🗓️", label: "Study Plan", desc: "AI-powered schedule" },
                     { icon: "🎈", label: "Balloon Game", desc: "Learn while playing" },
                   ].map((f) => (
-                    <div key={f.label} className="rounded-2xl p-4 text-left border border-white/5 hover:border-white/10 transition"
-                      style={{ background: "rgba(255,255,255,0.03)" }}>
+                    <div
+                      key={f.label}
+                      className="rounded-2xl p-4 text-left border border-white/5 hover:border-white/10 transition"
+                      style={{ background: "rgba(255,255,255,0.03)" }}
+                    >
                       <div className="text-2xl mb-1">{f.icon}</div>
                       <p className="text-sm font-medium text-white">{f.label}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{f.desc}</p>
@@ -438,56 +719,79 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Messages */}
+            {/* Message list */}
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-
                 {msg.role === "assistant" && (
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
-                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
+                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+                  >
                     AI
                   </div>
                 )}
 
                 <div className="flex flex-col gap-1 max-w-2xl">
-                  <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
-                    msg.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm"
-                  }`}
-                    style={msg.role === "user" ? {
-                      background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
-                      boxShadow: "0 4px 20px rgba(139,92,246,0.3)",
-                    } : {
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      backdropFilter: "blur(10px)",
-                    }}>
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
+                      msg.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm"
+                    }`}
+                    style={
+                      msg.role === "user"
+                        ? {
+                            background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
+                            boxShadow: "0 4px 20px rgba(139,92,246,0.3)",
+                          }
+                        : {
+                            background: "rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            backdropFilter: "blur(10px)",
+                          }
+                    }
+                  >
                     {msg.mode && (
-                      <span className="block text-xs font-semibold mb-1.5 opacity-80" style={{ color: msg.modeColor || "#a78bfa" }}>
+                      <span
+                        className="block text-xs font-semibold mb-1.5 opacity-80"
+                        style={{ color: msg.modeColor || "#a78bfa" }}
+                      >
                         {msg.mode}
                       </span>
                     )}
                     {msg.type === "file" ? (
                       <span className="text-blue-300 flex items-center gap-2">📄 {msg.content}</span>
-                    ) : msg.content}
+                    ) : (
+                      msg.content
+                    )}
                   </div>
 
-                  {/* Action buttons */}
                   {msg.role === "assistant" && msg.type === "text" && (
                     <div className="flex gap-2 px-1">
-                      <button onClick={() => handleSpeak(msg.content, i)}
+                      <button
+                        onClick={() => handleSpeak(msg.content, i)}
                         className="text-xs px-2.5 py-1 rounded-lg transition"
-                        style={speakingIndex === i
-                          ? { background: "rgba(59,130,246,0.2)", color: "#60a5fa" }
-                          : { color: "#6b7280" }}
-                        onMouseEnter={(e) => { if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#60a5fa"; }}
-                        onMouseLeave={(e) => { if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#6b7280"; }}>
+                        style={
+                          speakingIndex === i
+                            ? { background: "rgba(59,130,246,0.2)", color: "#60a5fa" }
+                            : { color: "#6b7280" }
+                        }
+                        onMouseEnter={(e) => {
+                          if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#60a5fa";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#6b7280";
+                        }}
+                      >
                         {speakingIndex === i ? "🔊 Speaking..." : "🔊 Listen"}
                       </button>
-                      <button onClick={() => saveAsNote(msg.content, i)}
+                      <button
+                        onClick={() => saveAsNote(msg.content, i)}
                         className="text-xs px-2.5 py-1 rounded-lg transition"
-                        style={savedMsgIds.has(i)
-                          ? { background: "rgba(16,185,129,0.2)", color: "#34d399" }
-                          : { color: "#6b7280" }}>
+                        style={
+                          savedMsgIds.has(i)
+                            ? { background: "rgba(16,185,129,0.2)", color: "#34d399" }
+                            : { color: "#6b7280" }
+                        }
+                      >
                         {savedMsgIds.has(i) ? "✅ Saved" : "📌 Save"}
                       </button>
                     </div>
@@ -495,23 +799,29 @@ export default function ChatPage() {
                 </div>
 
                 {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
-                    style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
+                    style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)" }}
+                  >
                     {userName.charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
             ))}
 
-            {/* Thinking indicator */}
+            {/* Thinking dots */}
             {(loading || summarizing) && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+                >
                   AI
                 </div>
-                <div className="rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div
+                  className="rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                >
                   <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                   <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                   <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
@@ -524,47 +834,75 @@ export default function ChatPage() {
         </div>
 
         {/* ── INPUT BAR ── */}
-        <div className="flex-shrink-0 p-4 border-t border-white/10"
-          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}>
+        <div
+          className="flex-shrink-0 p-4 border-t border-white/10"
+          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}
+        >
           <div className="max-w-3xl mx-auto">
             {file && (
-              <div className="mb-2 text-xs flex justify-between items-center px-3 py-1.5 rounded-lg border border-white/10"
-                style={{ background: "rgba(255,255,255,0.05)" }}>
+              <div
+                className="mb-2 text-xs flex justify-between items-center px-3 py-1.5 rounded-lg border border-white/10"
+                style={{ background: "rgba(255,255,255,0.05)" }}
+              >
                 <span className="text-blue-300">📄 {file.name}</span>
-                <button onClick={() => setFile(null)} className="text-red-400 hover:text-red-300 ml-2">✖</button>
+                <button onClick={() => setFile(null)} className="text-red-400 hover:text-red-300 ml-2">
+                  ✖
+                </button>
               </div>
             )}
 
-            <div className="flex items-end gap-2 rounded-2xl px-4 py-3 border transition-all"
+            <div
+              className="flex items-end gap-2 rounded-2xl px-4 py-3 border transition-all"
               style={{
                 background: "rgba(255,255,255,0.05)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 0 30px rgba(139,92,246,0.1)",
-              }}>
-              <input type="file" accept=".pdf,.docx,.txt,.md" ref={fileInputRef}
-                onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
+              }}
+            >
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt,.md"
+                ref={fileInputRef}
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="hidden"
+              />
 
-              <button onClick={() => fileInputRef.current?.click()}
-                className="text-gray-400 hover:text-white text-xl font-bold pb-0.5 transition w-6 flex-shrink-0">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-gray-400 hover:text-white text-xl font-bold pb-0.5 transition w-6 flex-shrink-0"
+              >
                 +
               </button>
 
-              <textarea ref={textareaRef} value={input} onChange={handleInput} onKeyDown={handleKeyDown}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={handleInput}
+                onKeyDown={handleKeyDown}
                 placeholder={listening ? "🎤 Listening..." : `Ask in ${activeMode?.label} mode...`}
                 className="flex-1 bg-transparent resize-none outline-none text-sm max-h-40 text-white placeholder-gray-500"
-                rows={1} />
+                rows={1}
+              />
 
               {micSupported && (
-                <button onClick={handleMic}
+                <button
+                  onClick={handleMic}
                   className="pb-0.5 text-lg transition flex-shrink-0"
-                  style={{ color: listening ? "#f87171" : "#6b7280" }}>
+                  style={{ color: listening ? "#f87171" : "#6b7280" }}
+                >
                   🎤
                 </button>
               )}
 
-              <button onClick={handleSend} disabled={loading}
+              <button
+                onClick={handleSend}
+                disabled={loading}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 flex-shrink-0"
-                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 0 20px rgba(139,92,246,0.4)" }}>
+                style={{
+                  background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
+                  boxShadow: "0 0 20px rgba(139,92,246,0.4)",
+                }}
+              >
                 ➤
               </button>
             </div>
