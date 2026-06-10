@@ -14,7 +14,6 @@ const MODES = [
 export default function ChatPage() {
   const router = useRouter();
 
-  // ── existing state ──
   const [messages, setMessages] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -29,7 +28,6 @@ export default function ChatPage() {
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
 
-  // ── new: chat history state ──
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -41,16 +39,31 @@ export default function ChatPage() {
   const recognitionRef = useRef<any>(null);
   const saveTimerRef = useRef<any>(null);
 
-  // ── on mount ──
+  // ── on mount: restore session from sessionStorage if coming back from a feature page ──
   useEffect(() => {
     const token = localStorage.getItem("sb_token");
     const name = localStorage.getItem("sb_name");
     if (!token) {
       router.push("/login");
-    } else {
-      setUserName(name || "User");
-      fetchSessions();
+      return;
     }
+    setUserName(name || "User");
+    fetchSessions();
+
+    // Restore active chat if user navigated away and came back
+    const savedSessionId = sessionStorage.getItem("active_session_id");
+    const savedMessages = sessionStorage.getItem("active_session_messages");
+    const savedDocName = sessionStorage.getItem("active_doc_name");
+    if (savedSessionId && savedMessages) {
+      try {
+        setActiveSessionId(savedSessionId);
+        setMessages(JSON.parse(savedMessages));
+        if (savedDocName) setCurrentDocName(savedDocName);
+      } catch {
+        // ignore malformed storage
+      }
+    }
+
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) setMicSupported(true);
@@ -66,6 +79,27 @@ export default function ChatPage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // ── persist messages to sessionStorage whenever they change ──
+  useEffect(() => {
+    if (messages.length > 0) {
+      sessionStorage.setItem("active_session_messages", JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  // ── persist activeSessionId to sessionStorage whenever it changes ──
+  useEffect(() => {
+    if (activeSessionId) {
+      sessionStorage.setItem("active_session_id", activeSessionId);
+    }
+  }, [activeSessionId]);
+
+  // ── persist currentDocName to sessionStorage whenever it changes ──
+  useEffect(() => {
+    if (currentDocName) {
+      sessionStorage.setItem("active_doc_name", currentDocName);
+    }
+  }, [currentDocName]);
 
   // ─────────────────────────────────────────
   // CHAT HISTORY FUNCTIONS
@@ -95,9 +129,15 @@ export default function ChatPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setMessages(data.messages || []);
+      const msgs = data.messages || [];
+      const docName = data.document_name || null;
+      setMessages(msgs);
       setActiveSessionId(sessionId);
-      setCurrentDocName(data.document_name || null);
+      setCurrentDocName(docName);
+      // Also persist to sessionStorage so back-navigation restores this session
+      sessionStorage.setItem("active_session_id", sessionId);
+      sessionStorage.setItem("active_session_messages", JSON.stringify(msgs));
+      if (docName) sessionStorage.setItem("active_doc_name", docName);
     } catch (e) {
       console.error("Could not load session", e);
     }
@@ -131,9 +171,9 @@ export default function ChatPage() {
         const data = await res.json();
         if (!sessionId && data.session_id) {
           setActiveSessionId(data.session_id);
+          sessionStorage.setItem("active_session_id", data.session_id);
           fetchSessions();
         } else {
-          // refresh list to update "updated_at" ordering
           fetchSessions();
         }
       } catch (e) {
@@ -147,6 +187,10 @@ export default function ChatPage() {
     setActiveSessionId(null);
     setCurrentDocName(null);
     setSavedMsgIds(new Set());
+    // Clear sessionStorage so back-navigation doesn't restore the old chat
+    sessionStorage.removeItem("active_session_id");
+    sessionStorage.removeItem("active_session_messages");
+    sessionStorage.removeItem("active_doc_name");
   };
 
   const deleteSession = async (sessionId: string) => {
@@ -165,7 +209,7 @@ export default function ChatPage() {
   };
 
   // ─────────────────────────────────────────
-  // EXISTING FUNCTIONS (unchanged)
+  // EXISTING FUNCTIONS
   // ─────────────────────────────────────────
 
   const handleLogout = () => {
@@ -173,6 +217,7 @@ export default function ChatPage() {
     recognitionRef.current?.stop();
     localStorage.removeItem("sb_token");
     localStorage.removeItem("sb_name");
+    sessionStorage.clear();
     router.push("/login");
   };
 
@@ -299,9 +344,9 @@ export default function ChatPage() {
           return updated;
         });
       } else {
-        // track the uploaded doc name for this session
         docName = file.name;
         setCurrentDocName(file.name);
+        sessionStorage.setItem("active_doc_name", file.name);
 
         let ready = false;
         for (let i = 0; i < 10; i++) {
