@@ -2,7 +2,7 @@
 
 An AI-powered study assistant that lets you upload documents and instantly chat with them, generate flashcards, take quizzes, get study plans, extract keywords, and more.
 
-> ⚠️ **Work in Progress** — Core features are functional. Supabase integration and session persistence are actively being added. See [What's Not Done Yet](#-whats-not-done-yet) below.
+>  **Work in Progress** — Core features are functional. Supabase integration and session persistence are actively being added. See [What's Not Done Yet](#-whats-not-done-yet) below.
 
 ---
 
@@ -166,7 +166,6 @@ Start the backend:
 uvicorn app.main:app --reload
 ```
 
-Backend runs at `http://127.0.0.1:8000`
 
 ---
 
@@ -237,5 +236,3 @@ Frontend runs at `http://localhost:3000`
 - The vector store (FAISS) is in-memory — it resets if the backend restarts. Re-upload your document after restarting the server.
 - Chat auto-saves to Supabase 1.5 seconds after each message.
 - Session state persists across page navigation within the same browser tab using `sessionStorage`.
-
----
