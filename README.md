@@ -166,7 +166,6 @@ Start the backend:
 uvicorn app.main:app --reload
 ```
 
-
 ---
 
 ### 3. Frontend Setup
@@ -177,7 +176,6 @@ npm install
 npm run dev
 ```
 
-Frontend runs at `http://localhost:3000`
 
 ---
 
