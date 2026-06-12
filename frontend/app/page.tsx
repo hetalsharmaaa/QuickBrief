@@ -4,11 +4,21 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 const MODES = [
-  { id: "default", label: "💬 Default", desc: "Helpful tutor", color: "#8B5CF6" },
-  { id: "teacher", label: "👨‍🏫 Teacher", desc: "In-depth explanation", color: "#3B82F6" },
-  { id: "simple", label: "🧒 Simple", desc: "Like I'm 10", color: "#F59E0B" },
-  { id: "exam", label: "🧠 Exam", desc: "Exam-ready answers", color: "#EF4444" },
-  { id: "revision", label: "⚡ Revision", desc: "Quick bullet points", color: "#10B981" },
+  { id: "default",  label: "Default",  desc: "Helpful tutor",        icon: "○" },
+  { id: "teacher",  label: "Teacher",  desc: "In-depth explanation",  icon: "○" },
+  { id: "simple",   label: "Simple",   desc: "Like I'm 10",           icon: "○" },
+  { id: "exam",     label: "Exam",     desc: "Exam-ready answers",    icon: "○" },
+  { id: "revision", label: "Revision", desc: "Quick bullet points",   icon: "○" },
+];
+
+const NAV = [
+  { href: "/game",      label: "Game" },
+  { href: "/planner",   label: "Planner" },
+  { href: "/flashcards",label: "Flashcards" },
+  { href: "/notes",     label: "Notes" },
+  { href: "/keywords",  label: "Keywords" },
+  { href: "/questions", label: "Questions" },
+  { href: "/quiz",      label: "Quiz" },
 ];
 
 export default function ChatPage() {
@@ -20,14 +30,11 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [mode, setMode] = useState("default");
-  const [showModes, setShowModes] = useState(false);
   const [savedMsgIds, setSavedMsgIds] = useState<Set<number>>(new Set());
   const [userName, setUserName] = useState("");
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
-
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -39,85 +46,41 @@ export default function ChatPage() {
   const recognitionRef = useRef<any>(null);
   const saveTimerRef = useRef<any>(null);
 
-  // ── on mount: restore session from sessionStorage if coming back from a feature page ──
   useEffect(() => {
     const token = localStorage.getItem("sb_token");
     const name = localStorage.getItem("sb_name");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
+    if (!token) { router.push("/login"); return; }
     setUserName(name || "User");
     fetchSessions();
-
-    // Restore active chat if user navigated away and came back
-    const savedSessionId = sessionStorage.getItem("active_session_id");
-    const savedMessages = sessionStorage.getItem("active_session_messages");
-    const savedDocName = sessionStorage.getItem("active_doc_name");
-    if (savedSessionId && savedMessages) {
+    const savedId = sessionStorage.getItem("active_session_id");
+    const savedMsgs = sessionStorage.getItem("active_session_messages");
+    const savedDoc = sessionStorage.getItem("active_doc_name");
+    if (savedId && savedMsgs) {
       try {
-        setActiveSessionId(savedSessionId);
-        setMessages(JSON.parse(savedMessages));
-        if (savedDocName) setCurrentDocName(savedDocName);
-      } catch {
-        // ignore malformed storage
-      }
+        setActiveSessionId(savedId);
+        setMessages(JSON.parse(savedMsgs));
+        if (savedDoc) setCurrentDocName(savedDoc);
+      } catch {}
     }
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) setMicSupported(true);
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SR) setMicSupported(true);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      window.speechSynthesis?.cancel();
-      recognitionRef.current?.stop();
-    };
-  }, []);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ── persist messages to sessionStorage whenever they change ──
-  useEffect(() => {
-    if (messages.length > 0) {
-      sessionStorage.setItem("active_session_messages", JSON.stringify(messages));
-    }
-  }, [messages]);
-
-  // ── persist activeSessionId to sessionStorage whenever it changes ──
-  useEffect(() => {
-    if (activeSessionId) {
-      sessionStorage.setItem("active_session_id", activeSessionId);
-    }
-  }, [activeSessionId]);
-
-  // ── persist currentDocName to sessionStorage whenever it changes ──
-  useEffect(() => {
-    if (currentDocName) {
-      sessionStorage.setItem("active_doc_name", currentDocName);
-    }
-  }, [currentDocName]);
-
-  // ─────────────────────────────────────────
-  // CHAT HISTORY FUNCTIONS
-  // ─────────────────────────────────────────
+  useEffect(() => () => { window.speechSynthesis?.cancel(); recognitionRef.current?.stop(); }, []);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(() => { if (messages.length > 0) sessionStorage.setItem("active_session_messages", JSON.stringify(messages)); }, [messages]);
+  useEffect(() => { if (activeSessionId) sessionStorage.setItem("active_session_id", activeSessionId); }, [activeSessionId]);
+  useEffect(() => { if (currentDocName) sessionStorage.setItem("active_doc_name", currentDocName); }, [currentDocName]);
 
   const fetchSessions = async () => {
     const token = localStorage.getItem("sb_token");
     if (!token) return;
     setSessionsLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/sessions", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("http://127.0.0.1:8000/sessions", { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       setSessions(data.sessions || []);
-    } catch (e) {
-      console.error("Could not load sessions", e);
-    }
+    } catch {}
     setSessionsLoading(false);
   };
 
@@ -125,69 +88,45 @@ export default function ChatPage() {
     const token = localStorage.getItem("sb_token");
     if (!token) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       const msgs = data.messages || [];
-      const docName = data.document_name || null;
+      const doc = data.document_name || null;
       setMessages(msgs);
       setActiveSessionId(sessionId);
-      setCurrentDocName(docName);
-      // Also persist to sessionStorage so back-navigation restores this session
+      setCurrentDocName(doc);
       sessionStorage.setItem("active_session_id", sessionId);
       sessionStorage.setItem("active_session_messages", JSON.stringify(msgs));
-      if (docName) sessionStorage.setItem("active_doc_name", docName);
-    } catch (e) {
-      console.error("Could not load session", e);
-    }
+      if (doc) sessionStorage.setItem("active_doc_name", doc);
+    } catch {}
   };
 
-  // auto-saves 1.5s after last message — debounced
   const autoSave = (msgs: any[], docName: string | null, sessionId: string | null) => {
     if (msgs.length === 0) return;
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       const token = localStorage.getItem("sb_token");
       if (!token) return;
-      const firstUserMsg = msgs.find((m) => m.role === "user");
-      const title = firstUserMsg
-        ? firstUserMsg.content.slice(0, 45) + (firstUserMsg.content.length > 45 ? "..." : "")
-        : "New Chat";
+      const first = msgs.find((m) => m.role === "user");
+      const title = first ? first.content.slice(0, 45) + (first.content.length > 45 ? "..." : "") : "New Chat";
       try {
         const res = await fetch("http://127.0.0.1:8000/sessions", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            title,
-            messages: msgs,
-            document_name: docName,
-          }),
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ session_id: sessionId, title, messages: msgs, document_name: docName }),
         });
         const data = await res.json();
         if (!sessionId && data.session_id) {
           setActiveSessionId(data.session_id);
           sessionStorage.setItem("active_session_id", data.session_id);
-          fetchSessions();
-        } else {
-          fetchSessions();
         }
-      } catch (e) {
-        console.error("Auto-save failed", e);
-      }
+        fetchSessions();
+      } catch {}
     }, 1500);
   };
 
   const startNewChat = () => {
-    setMessages([]);
-    setActiveSessionId(null);
-    setCurrentDocName(null);
-    setSavedMsgIds(new Set());
-    // Clear sessionStorage so back-navigation doesn't restore the old chat
+    setMessages([]); setActiveSessionId(null); setCurrentDocName(null); setSavedMsgIds(new Set());
     sessionStorage.removeItem("active_session_id");
     sessionStorage.removeItem("active_session_messages");
     sessionStorage.removeItem("active_doc_name");
@@ -196,21 +135,10 @@ export default function ChatPage() {
   const deleteSession = async (sessionId: string) => {
     const token = localStorage.getItem("sb_token");
     if (!token) return;
-    try {
-      await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (activeSessionId === sessionId) startNewChat();
-      fetchSessions();
-    } catch (e) {
-      console.error("Could not delete session", e);
-    }
+    await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    if (activeSessionId === sessionId) startNewChat();
+    fetchSessions();
   };
-
-  // ─────────────────────────────────────────
-  // EXISTING FUNCTIONS
-  // ─────────────────────────────────────────
 
   const handleLogout = () => {
     window.speechSynthesis?.cancel();
@@ -223,340 +151,222 @@ export default function ChatPage() {
 
   const handleSpeak = (text: string, index: number) => {
     if (!window.speechSynthesis) return;
-    if (speakingIndex === index) {
-      window.speechSynthesis.cancel();
-      setSpeakingIndex(null);
-      return;
-    }
+    if (speakingIndex === index) { window.speechSynthesis.cancel(); setSpeakingIndex(null); return; }
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    const detectLang = (t: string): string => {
-      if (/[\u0900-\u097F]/.test(t)) return "hi-IN";
-      if (/[\u0600-\u06FF]/.test(t)) return "ar-SA";
-      if (/[\u4E00-\u9FFF]/.test(t)) return "zh-CN";
-      if (/[\u3040-\u309F\u30A0-\u30FF]/.test(t)) return "ja-JP";
-      if (/[\uAC00-\uD7AF]/.test(t)) return "ko-KR";
-      if (/[\u0400-\u04FF]/.test(t)) return "ru-RU";
-      return "en-US";
-    };
-    const detectedLang = detectLang(text);
-    utterance.lang = detectedLang;
-    const voices = window.speechSynthesis.getVoices();
-    const matchingVoice =
-      voices.find((v) => v.lang === detectedLang) ||
-      voices.find((v) => v.lang.startsWith(detectedLang.split("-")[0])) ||
-      voices.find((v) => v.lang.startsWith("en")) ||
-      voices[0];
-    if (matchingVoice) utterance.voice = matchingVoice;
-    utterance.onstart = () => setSpeakingIndex(index);
-    utterance.onend = () => setSpeakingIndex(null);
-    utterance.onerror = () => setSpeakingIndex(null);
-    window.speechSynthesis.speak(utterance);
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95; u.pitch = 1; u.volume = 1;
+    u.onstart = () => setSpeakingIndex(index);
+    u.onend = () => setSpeakingIndex(null);
+    u.onerror = () => setSpeakingIndex(null);
+    window.speechSynthesis.speak(u);
   };
 
   const handleMic = () => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.maxAlternatives = 1;
-    recognition.onstart = () => setListening(true);
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0].transcript)
-        .join("");
-      setInput(transcript);
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-      }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    if (listening) { recognitionRef.current?.stop(); setListening(false); return; }
+    const r = new SR();
+    recognitionRef.current = r;
+    r.lang = "en-US"; r.interimResults = true; r.continuous = false;
+    r.onstart = () => setListening(true);
+    r.onresult = (e: any) => {
+      const t = Array.from(e.results).map((x: any) => x[0].transcript).join("");
+      setInput(t);
+      if (textareaRef.current) { textareaRef.current.style.height = "auto"; textareaRef.current.style.height = textareaRef.current.scrollHeight + "px"; }
     };
-    recognition.onerror = () => setListening(false);
-    recognition.onend = () => setListening(false);
-    recognition.start();
+    r.onerror = () => setListening(false);
+    r.onend = () => setListening(false);
+    r.start();
   };
 
   const handleInput = (e: any) => {
     setInput(e.target.value);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
+    if (textareaRef.current) { textareaRef.current.style.height = "auto"; textareaRef.current.style.height = textareaRef.current.scrollHeight + "px"; }
   };
 
   const saveAsNote = async (content: string, index: number) => {
     try {
       await fetch("http://127.0.0.1:8000/notes", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("sb_token") || ""}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("sb_token") || ""}` },
         body: JSON.stringify({ content, tag: "important", source: "ai" }),
       });
       setSavedMsgIds((prev) => new Set(prev).add(index));
-    } catch (e) {
-      console.error("Could not save note", e);
-    }
+    } catch {}
   };
 
   const handleSend = async () => {
     if (!input && !file) return;
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-    }
+    if (listening) { recognitionRef.current?.stop(); setListening(false); }
 
     let newMessages = [...messages];
     if (file) newMessages.push({ role: "user", type: "file", content: file.name });
     if (input) newMessages.push({ role: "user", type: "text", content: input });
-
     setMessages(newMessages);
     setLoading(true);
-
     let docName = currentDocName;
 
     if (file) {
       const formData = new FormData();
       formData.append("file", file);
       const uploadRes = await fetch("http://127.0.0.1:8000/upload", {
-        method: "POST",
-        body: formData,
+        method: "POST", body: formData,
         headers: { Authorization: `Bearer ${localStorage.getItem("sb_token") || ""}` },
       });
       const uploadData = await uploadRes.json();
       if (uploadData.error) {
-        setMessages((prev) => {
-          const updated = [...prev, { role: "assistant", type: "text", content: `❌ ${uploadData.error}` }];
-          autoSave(updated, docName, activeSessionId);
-          return updated;
-        });
+        setMessages((prev) => { const u = [...prev, { role: "assistant", type: "text", content: `Error: ${uploadData.error}` }]; autoSave(u, docName, activeSessionId); return u; });
       } else {
-        docName = file.name;
-        setCurrentDocName(file.name);
-        sessionStorage.setItem("active_doc_name", file.name);
-
+        docName = file.name; setCurrentDocName(file.name); sessionStorage.setItem("active_doc_name", file.name);
         let ready = false;
         for (let i = 0; i < 10; i++) {
-          const statusRes = await fetch("http://127.0.0.1:8000/status");
-          const statusData = await statusRes.json();
-          if (statusData.ready) { ready = true; break; }
+          const s = await fetch("http://127.0.0.1:8000/status");
+          const sd = await s.json();
+          if (sd.ready) { ready = true; break; }
           await new Promise((r) => setTimeout(r, 500));
         }
         setMessages((prev) => {
-          const updated = [
-            ...prev,
-            {
-              role: "assistant",
-              type: "text",
-              content: ready
-                ? `✅ "${file.name}" uploaded and ready! (${uploadData.chunks_created} chunks in ${uploadData.processing_time_seconds}s)\n\nAsk me anything or click ⚡ Summarize PDF.`
-                : `⚠️ File uploaded but still processing. Wait a moment then ask your question.`,
-            },
-          ];
-          autoSave(updated, docName, activeSessionId);
-          return updated;
+          const u = [...prev, {
+            role: "assistant", type: "text",
+            content: ready
+              ? `"${file.name}" is ready — ${uploadData.chunks_created} chunks indexed in ${uploadData.processing_time_seconds}s. Ask me anything.`
+              : `File uploaded but still processing. Give it a moment then ask your question.`,
+          }];
+          autoSave(u, docName, activeSessionId); return u;
         });
       }
     }
 
     if (input) {
       const res = await fetch("http://127.0.0.1:8000/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: input, mode }),
       });
       const data = await res.json();
-      const activeModeObj = MODES.find((m) => m.id === mode);
       setMessages((prev) => {
-        const updated = [
-          ...prev,
-          {
-            role: "assistant",
-            type: "text",
-            content: data.answer || data.error,
-            mode: activeModeObj?.label,
-            modeColor: activeModeObj?.color,
-          },
-        ];
-        autoSave(updated, docName, activeSessionId);
-        return updated;
+        const u = [...prev, { role: "assistant", type: "text", content: data.answer || data.error, mode }];
+        autoSave(u, docName, activeSessionId); return u;
       });
     }
 
-    setLoading(false);
-    setInput("");
-    setFile(null);
+    setLoading(false); setInput(""); setFile(null);
   };
 
   const handleSummarize = async () => {
     setSummarizing(true);
-    const userMsg = { role: "user", type: "text", content: "Give me a summary of the document." };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => [...prev, { role: "user", type: "text", content: "Summarize the document." }]);
     const res = await fetch("http://127.0.0.1:8000/summarize", { method: "POST" });
     const data = await res.json();
     setMessages((prev) => {
-      const updated = [...prev, { role: "assistant", type: "text", content: data.summary || data.error }];
-      autoSave(updated, currentDocName, activeSessionId);
-      return updated;
+      const u = [...prev, { role: "assistant", type: "text", content: data.summary || data.error }];
+      autoSave(u, currentDocName, activeSessionId); return u;
     });
     setSummarizing(false);
   };
 
-  const handleKeyDown = (e: any) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
+  const handleKeyDown = (e: any) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } };
   const activeMode = MODES.find((m) => m.id === mode);
 
-  // ─────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────
-
   return (
-    <div
-      className="flex h-screen text-white overflow-hidden"
-      style={{ background: "linear-gradient(135deg, #0f0c29, #302b63, #24243e)" }}
-    >
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg)", color: "var(--text)" }}>
+
       {/* ── SIDEBAR ── */}
       <div
-        className="w-64 flex-shrink-0 hidden md:flex flex-col justify-between border-r border-white/10"
-        style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(20px)" }}
+        className="w-56 flex-shrink-0 hidden md:flex flex-col border-r"
+        style={{ background: "var(--surface)", borderColor: "var(--border)" }}
       >
-        {/* scrollable top section */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-4 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "var(--accent)" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+          </div>
+          <span className="font-semibold text-sm" style={{ color: "var(--text)" }}>QuickBrief</span>
+        </div>
 
-          {/* Logo */}
-          <div className="flex items-center gap-2 px-2 py-3 mb-2">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-lg"
-              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-5">
+
+          {/* Actions */}
+          <div className="space-y-1.5">
+            <button
+              onClick={startNewChat}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm transition-all"
+              style={{ color: "var(--subtle)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--muted)"; (e.currentTarget as HTMLElement).style.color = "var(--text)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = "var(--subtle)"; }}
             >
-              📚
-            </div>
-            <span
-              className="font-bold text-lg bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}
+              + New Chat
+            </button>
+            <button
+              onClick={handleSummarize}
+              disabled={summarizing}
+              className="w-full text-left px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-40"
+              style={{ color: "var(--subtle)" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--muted)"; (e.currentTarget as HTMLElement).style.color = "var(--text)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = "var(--subtle)"; }}
             >
-              QuickBrief
-            </span>
+              {summarizing ? "Summarizing..." : "Summarize PDF"}
+            </button>
           </div>
 
-          {/* New Chat */}
-          <button
-            onClick={startNewChat}
-            className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-300 border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all"
-          >
-            + New Chat
-          </button>
-
-          {/* Summarize */}
-          <button
-            onClick={handleSummarize}
-            disabled={summarizing}
-            className="w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
-            style={{
-              background: "linear-gradient(135deg, #F59E0B, #EF4444)",
-              boxShadow: summarizing ? "none" : "0 0 20px rgba(245,158,11,0.3)",
-            }}
-          >
-            {summarizing ? "⏳ Summarizing..." : "⚡ Summarize PDF"}
-          </button>
-
           {/* AI Mode */}
-          <div className="pt-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">
-              AI Mode
-            </p>
-            <div className="space-y-1">
+          <div>
+            <p className="text-xs font-medium px-3 mb-1.5 uppercase tracking-wider" style={{ color: "var(--muted)" }}>Mode</p>
+            <div className="space-y-0.5">
               {MODES.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => setMode(m.id)}
-                  className="w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all"
+                  className="w-full text-left px-3 py-2 rounded-lg text-sm transition-all"
                   style={
                     mode === m.id
-                      ? {
-                          background: `linear-gradient(135deg, ${m.color}33, ${m.color}11)`,
-                          borderLeft: `3px solid ${m.color}`,
-                          color: "#fff",
-                        }
-                      : { color: "#9ca3af" }
+                      ? { background: "rgba(99,102,241,0.15)", color: "var(--text)", borderLeft: "2px solid var(--accent)" }
+                      : { color: "var(--subtle)", borderLeft: "2px solid transparent" }
                   }
                 >
-                  <span className="font-medium">{m.label}</span>
-                  <span
-                    className="block text-xs mt-0.5"
-                    style={{ color: mode === m.id ? m.color : "#6b7280" }}
-                  >
-                    {m.desc}
-                  </span>
+                  {m.label}
+                  <span className="block text-xs mt-0.5" style={{ color: mode === m.id ? "var(--subtle)" : "var(--muted)" }}>{m.desc}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* ── CHAT HISTORY ── */}
-          <div className="pt-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest px-2 mb-2">
-              Chat History
-            </p>
-
+          {/* Chat History */}
+          <div>
+            <p className="text-xs font-medium px-3 mb-1.5 uppercase tracking-wider" style={{ color: "var(--muted)" }}>History</p>
             {sessionsLoading ? (
-              <p className="text-xs text-gray-600 px-2 py-1">Loading...</p>
+              <p className="text-xs px-3 py-1" style={{ color: "var(--muted)" }}>Loading...</p>
             ) : sessions.length === 0 ? (
-              <p className="text-xs text-gray-600 px-2 py-1">No saved chats yet</p>
+              <p className="text-xs px-3 py-1" style={{ color: "var(--muted)" }}>No chats yet</p>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {sessions.map((s: any) => (
                   <div
                     key={s.id}
-                    className="group flex items-start justify-between px-3 py-2 rounded-xl cursor-pointer transition-all"
+                    className="group flex items-start justify-between px-3 py-2 rounded-lg cursor-pointer transition-all"
                     style={
                       activeSessionId === s.id
-                        ? {
-                            background: "rgba(139,92,246,0.2)",
-                            borderLeft: "3px solid #8B5CF6",
-                          }
-                        : { borderLeft: "3px solid transparent" }
+                        ? { background: "rgba(99,102,241,0.15)", borderLeft: "2px solid var(--accent)" }
+                        : { borderLeft: "2px solid transparent" }
                     }
+                    onMouseEnter={(e) => { if (activeSessionId !== s.id) (e.currentTarget as HTMLElement).style.background = "var(--bg)"; }}
+                    onMouseLeave={(e) => { if (activeSessionId !== s.id) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                     onClick={() => loadSession(s.id)}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate text-gray-300">{s.title}</p>
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--text)" }}>{s.title}</p>
                       {s.document_name && (
-                        <p className="text-xs truncate mt-0.5" style={{ color: "#6b7280" }}>
-                          📄 {s.document_name}
-                        </p>
+                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--muted)" }}>{s.document_name}</p>
                       )}
-                      <p className="text-xs mt-0.5" style={{ color: "#4b5563" }}>
-                        {new Date(s.updated_at).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                        })}
-                      </p>
                     </div>
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteSession(s.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 text-xs ml-1 mt-0.5 transition-all flex-shrink-0"
+                      onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-xs ml-1 transition-all flex-shrink-0"
+                      style={{ color: "var(--muted)" }}
+                      onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "#f87171")}
+                      onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
                     >
                       ✕
                     </button>
@@ -567,23 +377,26 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* User — pinned to bottom */}
-        <div className="border-t border-white/10 p-4">
-          <div className="flex items-center justify-between px-2">
+        {/* User — pinned bottom */}
+        <div className="p-3 border-t" style={{ borderColor: "var(--border)" }}>
+          <div className="flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
+                style={{ background: "var(--muted)", color: "var(--text)" }}
               >
                 {userName.charAt(0).toUpperCase()}
               </div>
-              <span className="text-sm text-gray-300 truncate max-w-[100px]">{userName}</span>
+              <span className="text-sm truncate max-w-[90px]" style={{ color: "var(--text)" }}>{userName}</span>
             </div>
             <button
               onClick={handleLogout}
-              className="text-xs text-gray-600 hover:text-red-400 transition px-2 py-1 rounded-lg hover:bg-red-400/10"
+              className="text-xs transition"
+              style={{ color: "var(--muted)" }}
+              onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "#f87171")}
+              onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
             >
-              Logout
+              Out
             </button>
           </div>
         </div>
@@ -592,172 +405,84 @@ export default function ChatPage() {
       {/* ── MAIN ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Top bar */}
+        {/* Topbar */}
         <div
-          className="flex items-center justify-between px-6 py-3 border-b border-white/10 flex-shrink-0"
-          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}
+          className="flex items-center justify-between px-5 py-3 border-b flex-shrink-0"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
-          <div className="flex items-center gap-2 md:hidden">
-            <span
-              className="font-bold bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa)" }}
-            >
-              📚 QuickBrief
-            </span>
-          </div>
-
-          <div className="hidden md:block" />
-
-          <div className="flex gap-2 items-center flex-wrap justify-end">
-            {/* Mobile mode toggle */}
-            <div className="relative md:hidden">
-              <button
-                onClick={() => setShowModes(!showModes)}
-                className="px-3 py-1.5 rounded-xl text-xs font-medium border border-white/20 hover:border-white/40 transition"
-                style={{ background: `${activeMode?.color}22`, color: activeMode?.color }}
+          <div className="flex items-center gap-2">
+            {/* mobile logo */}
+            <span className="font-semibold text-sm md:hidden" style={{ color: "var(--text)" }}>QuickBrief</span>
+            {/* active mode pill */}
+            {mode !== "default" && (
+              <span
+                className="hidden md:inline text-xs px-2 py-0.5 rounded-md"
+                style={{ background: "rgba(99,102,241,0.15)", color: "var(--accent)" }}
               >
                 {activeMode?.label}
-              </button>
-              {showModes && (
-                <div
-                  className="absolute right-0 top-10 rounded-2xl p-2 z-50 w-48 shadow-2xl border border-white/10"
-                  style={{ background: "rgba(15,12,41,0.95)", backdropFilter: "blur(20px)" }}
-                >
-                  {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setMode(m.id); setShowModes(false); }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-sm transition"
-                      style={mode === m.id ? { background: `${m.color}22`, color: m.color } : { color: "#9ca3af" }}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+              </span>
+            )}
+            {currentDocName && (
+              <span className="hidden md:inline text-xs truncate max-w-48" style={{ color: "var(--subtle)" }}>
+                {currentDocName}
+              </span>
+            )}
+          </div>
 
-            {[
-              { href: "/game", label: "🎈 Game", bg: "linear-gradient(135deg, #EC4899, #8B5CF6)" },
-              { href: "/planner", label: "🗓️ Planner", bg: "linear-gradient(135deg, #10B981, #3B82F6)" },
-              { href: "/flashcards", label: "🃏 Flashcards", bg: "linear-gradient(135deg, #F59E0B, #EF4444)" },
-              { href: "/notes", label: "📝 Notes", bg: "linear-gradient(135deg, #6B7280, #4B5563)" },
-              { href: "/keywords", label: "🔑 Keywords", bg: "linear-gradient(135deg, #F59E0B, #F97316)" },
-              { href: "/questions", label: "❓ Questions", bg: "linear-gradient(135deg, #3B82F6, #06B6D4)" },
-              { href: "/quiz", label: "🧠 Quiz", bg: "linear-gradient(135deg, #8B5CF6, #EC4899)" },
-            ].map((btn) => (
+          <div className="flex items-center gap-1.5">
+            {NAV.map((n) => (
               <a
-                key={btn.href}
-                href={btn.href}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all hover:scale-105 hover:shadow-lg"
-                style={{ background: btn.bg }}
+                key={n.href}
+                href={n.href}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{ color: "var(--subtle)", background: "transparent" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--muted)"; (e.currentTarget as HTMLElement).style.color = "var(--text)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = "var(--subtle)"; }}
               >
-                {btn.label}
+                {n.label}
               </a>
             ))}
-
-            {/* Mobile user */}
-            <div className="relative md:hidden">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
-              >
-                {userName.charAt(0).toUpperCase()}
-              </button>
-              {showUserMenu && (
-                <div
-                  className="absolute right-0 top-10 rounded-xl p-3 z-50 w-40 shadow-xl border border-white/10"
-                  style={{ background: "rgba(15,12,41,0.95)" }}
-                >
-                  <p className="text-xs text-gray-400 mb-2 truncate">{userName}</p>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full text-left text-sm text-red-400 hover:text-red-300"
-                  >
-                    🚪 Logout
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
-        {/* Mode banner */}
-        {mode !== "default" && (
-          <div
-            className="text-xs text-center py-1.5 flex-shrink-0 font-medium"
-            style={{
-              background: `${activeMode?.color}22`,
-              color: activeMode?.color,
-              borderBottom: `1px solid ${activeMode?.color}33`,
-            }}
-          >
-            {activeMode?.label} mode active — {activeMode?.desc}
-          </div>
-        )}
-
         {/* Listening banner */}
         {listening && (
-          <div
-            className="text-xs text-center py-2 flex-shrink-0 flex items-center justify-center gap-2"
-            style={{
-              background: "rgba(239,68,68,0.15)",
-              color: "#fca5a5",
-              borderBottom: "1px solid rgba(239,68,68,0.3)",
-            }}
-          >
-            <span className="w-2 h-2 bg-red-400 rounded-full animate-pulse inline-block" />
-            Listening... speak your question, then click mic to stop
+          <div className="text-xs text-center py-1.5 flex items-center justify-center gap-2 flex-shrink-0"
+            style={{ background: "rgba(239,68,68,0.08)", color: "#f87171", borderBottom: "1px solid rgba(239,68,68,0.2)" }}>
+            <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse inline-block" />
+            Listening — speak now, click mic to stop
           </div>
         )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+          <div className="max-w-2xl mx-auto px-4 py-8 space-y-5">
 
-            {/* Welcome screen */}
+            {/* Empty state */}
             {messages.length === 0 && (
-              <div className="text-center mt-16 space-y-4">
+              <div className="text-center mt-20 space-y-3">
                 <div
-                  className="w-20 h-20 rounded-3xl flex items-center justify-center text-4xl mx-auto"
-                  style={{
-                    background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
-                    boxShadow: "0 0 60px rgba(139,92,246,0.4)",
-                  }}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                 >
-                  📚
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--subtle)" }}>
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                  </svg>
                 </div>
-                <h1
-                  className="text-3xl font-bold bg-clip-text text-transparent"
-                  style={{ backgroundImage: "linear-gradient(135deg, #a78bfa, #60a5fa, #34d399)" }}
-                >
-                  Hi {userName}! I'm QuickBrief
-                </h1>
-                <p className="text-gray-400 text-sm max-w-sm mx-auto leading-relaxed">
-                  Upload a file using the{" "}
-                  <span className="text-white font-semibold">+</span> button, then ask me anything about it.
+                <p className="text-base font-medium" style={{ color: "var(--text)" }}>Hi {userName}</p>
+                <p className="text-sm" style={{ color: "var(--subtle)" }}>
+                  Upload a file with <span style={{ color: "var(--text)" }}>+</span>, then ask anything about it.
                 </p>
-                <div className="flex items-center justify-center gap-6 text-xs text-gray-500 mt-4">
-                  <span>🎤 Speak questions</span>
-                  <span>🔊 Listen to answers</span>
-                  <span>📌 Save notes</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-8 max-w-md mx-auto">
+                <div className="grid grid-cols-2 gap-2 mt-8 max-w-sm mx-auto text-left">
                   {[
-                    { icon: "🧠", label: "Quiz Mode", desc: "Test your knowledge" },
-                    { icon: "🃏", label: "Flashcards", desc: "Quick revision" },
-                    { icon: "🗓️", label: "Study Plan", desc: "AI-powered schedule" },
-                    { icon: "🎈", label: "Balloon Game", desc: "Learn while playing" },
-                  ].map((f) => (
-                    <div
-                      key={f.label}
-                      className="rounded-2xl p-4 text-left border border-white/5 hover:border-white/10 transition"
-                      style={{ background: "rgba(255,255,255,0.03)" }}
-                    >
-                      <div className="text-2xl mb-1">{f.icon}</div>
-                      <p className="text-sm font-medium text-white">{f.label}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{f.desc}</p>
+                    ["Flashcards", "Auto-generated from your doc"],
+                    ["Quiz", "Test yourself with MCQs"],
+                    ["Study Plan", "AI-built revision schedule"],
+                    ["Keywords", "Key terms extracted instantly"],
+                  ].map(([title, desc]) => (
+                    <div key={title} className="p-3 rounded-xl border text-sm" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+                      <p className="font-medium mb-0.5" style={{ color: "var(--text)" }}>{title}</p>
+                      <p className="text-xs" style={{ color: "var(--subtle)" }}>{desc}</p>
                     </div>
                   ))}
                 </div>
@@ -769,75 +494,49 @@ export default function ChatPage() {
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
                   <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
-                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0 mt-0.5"
+                    style={{ background: "var(--accent)", color: "#fff" }}
                   >
                     AI
                   </div>
                 )}
 
-                <div className="flex flex-col gap-1 max-w-2xl">
+                <div className="flex flex-col gap-1 max-w-xl">
                   <div
-                    className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
-                      msg.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm"
-                    }`}
+                    className="rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line"
                     style={
                       msg.role === "user"
-                        ? {
-                            background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
-                            boxShadow: "0 4px 20px rgba(139,92,246,0.3)",
-                          }
-                        : {
-                            background: "rgba(255,255,255,0.06)",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            backdropFilter: "blur(10px)",
-                          }
+                        ? { background: "var(--muted)", color: "var(--text)", borderRadius: "16px 4px 16px 16px" }
+                        : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", borderRadius: "4px 16px 16px 16px" }
                     }
                   >
-                    {msg.mode && (
-                      <span
-                        className="block text-xs font-semibold mb-1.5 opacity-80"
-                        style={{ color: msg.modeColor || "#a78bfa" }}
-                      >
+                    {msg.mode && msg.mode !== "default" && (
+                      <span className="block text-xs mb-1.5 font-medium" style={{ color: "var(--accent)" }}>
                         {msg.mode}
                       </span>
                     )}
                     {msg.type === "file" ? (
-                      <span className="text-blue-300 flex items-center gap-2">📄 {msg.content}</span>
-                    ) : (
-                      msg.content
-                    )}
+                      <span style={{ color: "var(--subtle)" }}>↑ {msg.content}</span>
+                    ) : msg.content}
                   </div>
 
                   {msg.role === "assistant" && msg.type === "text" && (
-                    <div className="flex gap-2 px-1">
+                    <div className="flex gap-1 px-1">
                       <button
                         onClick={() => handleSpeak(msg.content, i)}
-                        className="text-xs px-2.5 py-1 rounded-lg transition"
-                        style={
-                          speakingIndex === i
-                            ? { background: "rgba(59,130,246,0.2)", color: "#60a5fa" }
-                            : { color: "#6b7280" }
-                        }
-                        onMouseEnter={(e) => {
-                          if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#60a5fa";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (speakingIndex !== i) (e.target as HTMLElement).style.color = "#6b7280";
-                        }}
+                        className="text-xs px-2 py-1 rounded-md transition-all"
+                        style={{ color: speakingIndex === i ? "var(--accent)" : "var(--muted)" }}
+                        onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "var(--subtle)")}
+                        onMouseLeave={(e) => ((e.target as HTMLElement).style.color = speakingIndex === i ? "var(--accent)" : "var(--muted)")}
                       >
-                        {speakingIndex === i ? "🔊 Speaking..." : "🔊 Listen"}
+                        {speakingIndex === i ? "■ Stop" : "▶ Listen"}
                       </button>
                       <button
                         onClick={() => saveAsNote(msg.content, i)}
-                        className="text-xs px-2.5 py-1 rounded-lg transition"
-                        style={
-                          savedMsgIds.has(i)
-                            ? { background: "rgba(16,185,129,0.2)", color: "#34d399" }
-                            : { color: "#6b7280" }
-                        }
+                        className="text-xs px-2 py-1 rounded-md transition-all"
+                        style={{ color: savedMsgIds.has(i) ? "var(--accent)" : "var(--muted)" }}
                       >
-                        {savedMsgIds.has(i) ? "✅ Saved" : "📌 Save"}
+                        {savedMsgIds.has(i) ? "Saved" : "Save note"}
                       </button>
                     </div>
                   )}
@@ -845,8 +544,8 @@ export default function ChatPage() {
 
                 {msg.role === "user" && (
                   <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1"
-                    style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)" }}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0 mt-0.5"
+                    style={{ background: "var(--muted)", color: "var(--text)" }}
                   >
                     {userName.charAt(0).toUpperCase()}
                   </div>
@@ -854,22 +553,14 @@ export default function ChatPage() {
               </div>
             ))}
 
-            {/* Thinking dots */}
+            {/* Typing indicator */}
             {(loading || summarizing) && (
               <div className="flex gap-3">
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
-                >
-                  AI
-                </div>
-                <div
-                  className="rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2"
-                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-                >
-                  <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0" style={{ background: "var(--accent)", color: "#fff" }}>AI</div>
+                <div className="px-4 py-3 rounded-2xl flex items-center gap-1.5" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "4px 16px 16px 16px" }}>
+                  {[0, 150, 300].map((d) => (
+                    <span key={d} className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: "var(--muted)", animationDelay: `${d}ms` }} />
+                  ))}
                 </div>
               </div>
             )}
@@ -879,42 +570,30 @@ export default function ChatPage() {
         </div>
 
         {/* ── INPUT BAR ── */}
-        <div
-          className="flex-shrink-0 p-4 border-t border-white/10"
-          style={{ background: "rgba(255,255,255,0.02)", backdropFilter: "blur(20px)" }}
-        >
-          <div className="max-w-3xl mx-auto">
+        <div className="flex-shrink-0 p-4 border-t" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+          <div className="max-w-2xl mx-auto">
             {file && (
               <div
-                className="mb-2 text-xs flex justify-between items-center px-3 py-1.5 rounded-lg border border-white/10"
-                style={{ background: "rgba(255,255,255,0.05)" }}
+                className="mb-2 text-xs flex justify-between items-center px-3 py-1.5 rounded-lg"
+                style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--subtle)" }}
               >
-                <span className="text-blue-300">📄 {file.name}</span>
-                <button onClick={() => setFile(null)} className="text-red-400 hover:text-red-300 ml-2">
-                  ✖
-                </button>
+                <span>↑ {file.name}</span>
+                <button onClick={() => setFile(null)} style={{ color: "var(--muted)" }} onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "#f87171")} onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}>✕</button>
               </div>
             )}
 
             <div
-              className="flex items-end gap-2 rounded-2xl px-4 py-3 border transition-all"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-                boxShadow: "0 0 30px rgba(139,92,246,0.1)",
-              }}
+              className="flex items-end gap-2 rounded-xl px-4 py-3 transition-all"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
             >
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt,.md"
-                ref={fileInputRef}
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="hidden"
-              />
+              <input type="file" accept=".pdf,.docx,.txt,.md" ref={fileInputRef} onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="text-gray-400 hover:text-white text-xl font-bold pb-0.5 transition w-6 flex-shrink-0"
+                className="text-lg font-light pb-0.5 transition flex-shrink-0"
+                style={{ color: "var(--muted)" }}
+                onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "var(--text)")}
+                onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
               >
                 +
               </button>
@@ -924,37 +603,33 @@ export default function ChatPage() {
                 value={input}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
-                placeholder={listening ? "🎤 Listening..." : `Ask in ${activeMode?.label} mode...`}
-                className="flex-1 bg-transparent resize-none outline-none text-sm max-h-40 text-white placeholder-gray-500"
+                placeholder={listening ? "Listening..." : `Message (${activeMode?.label} mode)`}
+                className="flex-1 bg-transparent resize-none outline-none text-sm max-h-40"
+                style={{ color: "var(--text)" }}
                 rows={1}
               />
 
               {micSupported && (
                 <button
                   onClick={handleMic}
-                  className="pb-0.5 text-lg transition flex-shrink-0"
-                  style={{ color: listening ? "#f87171" : "#6b7280" }}
+                  className="pb-0.5 text-sm transition flex-shrink-0"
+                  style={{ color: listening ? "#f87171" : "var(--muted)" }}
                 >
-                  🎤
+                  {listening ? "◉" : "⏺"}
                 </button>
               )}
 
               <button
                 onClick={handleSend}
                 disabled={loading}
-                className="px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105 disabled:opacity-50 flex-shrink-0"
-                style={{
-                  background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
-                  boxShadow: "0 0 20px rgba(139,92,246,0.4)",
-                }}
+                className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40 flex-shrink-0"
+                style={{ background: "var(--accent)", color: "#fff" }}
+                onMouseEnter={(e) => ((e.target as HTMLElement).style.background = "var(--accent-hover)")}
+                onMouseLeave={(e) => ((e.target as HTMLElement).style.background = "var(--accent)")}
               >
-                ➤
+                Send
               </button>
             </div>
-
-            <p className="text-xs text-gray-600 mt-2 text-center">
-              QuickBrief can make mistakes. Always verify important info.
-            </p>
           </div>
         </div>
       </div>
