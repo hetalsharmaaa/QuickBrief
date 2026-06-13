@@ -110,7 +110,7 @@ export default function ChatPage() {
     if (!token) return;
     setSessionsLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/sessions", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sessions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -125,7 +125,7 @@ export default function ChatPage() {
     const token = localStorage.getItem("sb_token");
     if (!token) return;
     try {
-      const res = await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sessions/${sessionId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -155,7 +155,7 @@ export default function ChatPage() {
         ? firstUserMsg.content.slice(0, 45) + (firstUserMsg.content.length > 45 ? "..." : "")
         : "New Chat";
       try {
-        const res = await fetch("http://127.0.0.1:8000/sessions", {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sessions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -197,7 +197,7 @@ export default function ChatPage() {
     const token = localStorage.getItem("sb_token");
     if (!token) return;
     try {
-      await fetch(`http://127.0.0.1:8000/sessions/${sessionId}`, {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/sessions/${sessionId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -298,7 +298,7 @@ export default function ChatPage() {
 
   const saveAsNote = async (content: string, index: number) => {
     try {
-      await fetch("http://127.0.0.1:8000/notes", {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/notes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -331,7 +331,7 @@ export default function ChatPage() {
     if (file) {
       const formData = new FormData();
       formData.append("file", file);
-      const uploadRes = await fetch("http://127.0.0.1:8000/upload", {
+      const uploadRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/upload`, {
         method: "POST",
         body: formData,
         headers: { Authorization: `Bearer ${localStorage.getItem("sb_token") || ""}` },
@@ -350,7 +350,7 @@ export default function ChatPage() {
 
         let ready = false;
         for (let i = 0; i < 10; i++) {
-          const statusRes = await fetch("http://127.0.0.1:8000/status");
+          const statusRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/status`);
           const statusData = await statusRes.json();
           if (statusData.ready) { ready = true; break; }
           await new Promise((r) => setTimeout(r, 500));
@@ -373,7 +373,7 @@ export default function ChatPage() {
     }
 
     if (input) {
-      const res = await fetch("http://127.0.0.1:8000/chat", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: input, mode }),
@@ -405,7 +405,7 @@ export default function ChatPage() {
     setSummarizing(true);
     const userMsg = { role: "user", type: "text", content: "Give me a summary of the document." };
     setMessages((prev) => [...prev, userMsg]);
-    const res = await fetch("http://127.0.0.1:8000/summarize", { method: "POST" });
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/summarize`, { method: "POST" });
     const data = await res.json();
     setMessages((prev) => {
       const updated = [...prev, { role: "assistant", type: "text", content: data.summary || data.error }];
