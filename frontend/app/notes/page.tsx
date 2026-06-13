@@ -32,7 +32,7 @@ export default function QuestionsPage() {
     setRevealed({});
     setError("");
 
-    const res = await fetch("http://127.0.0.1:8000/questions", {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/questions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ num_questions: count, question_type: type }),
